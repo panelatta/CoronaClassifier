@@ -7,6 +7,7 @@ from typing import TextIO
 from collections.abc import Iterator
 import logging
 import re
+from typing import Optional
 
 BLOCK_SIZE = 256 * 1024 * 1024  # 256 MB
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
@@ -97,9 +98,6 @@ def parse_fasta_files(fasta_file_names: list[str]) -> pd.DataFrame:
 
     df: pd.DataFrame = pd.DataFrame(columns=['strain', 'sequence'])
 
-    current_seq_id = None
-    current_seq = []
-
     for fasta_file in fasta_file_names:
         with open(fasta_file, 'r') as file:
             if os.path.exists(fasta_file + '.pkl'):
@@ -107,26 +105,9 @@ def parse_fasta_files(fasta_file_names: list[str]) -> pd.DataFrame:
                 df = pd.concat([df, pd.read_pickle(fasta_file + '.pkl')], ignore_index=True)
                 continue
 
-            logging.info(f'Parsing {fasta_file}...')
-            sequence_ids: list[str] = []
-            dna_sequences: list[str] = []
-
-            for line in file:
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith('>'):
-                    if current_seq_id:
-                        sequence_ids.append(current_seq_id)
-                        dna_sequences.append(''.join(current_seq))
-                    current_seq_id = line[1:].split()[0]
-                    current_seq = []
-                else:
-                    current_seq.append(line.upper())
-
-            if current_seq_id:
-                sequence_ids.append(current_seq_id)
-                dna_sequences.append(''.join(current_seq))
+            dna_sequences: list[str]
+            sequence_ids: list[str]
+            dna_sequences, sequence_ids = parse_fasta_file(fasta_file, file)
 
             logging.info(f'Saving {fasta_file + ".pkl"}...')
             cur_df: pd.DataFrame = pd.DataFrame(list(zip(sequence_ids, dna_sequences)), columns=df.columns)
@@ -135,6 +116,38 @@ def parse_fasta_files(fasta_file_names: list[str]) -> pd.DataFrame:
             df = pd.concat([df, cur_df], ignore_index=True)
 
     return df
+
+
+def parse_fasta_file(fasta_file: str, file: TextIO) -> tuple[list[str], list[str]]:
+    """
+    Parses a single fasta file.
+    :param fasta_file:
+    :param file:
+    :return list[str], list[str]:
+    """
+
+    current_seq_id: Optional[str] = None
+    current_seq: list[str] = []
+
+    logging.info(f'Parsing {fasta_file}...')
+    sequence_ids: list[str] = []
+    dna_sequences: list[str] = []
+    for line in file:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('>'):
+            if current_seq_id:
+                sequence_ids.append(current_seq_id)
+                dna_sequences.append(''.join(current_seq))
+            current_seq_id = line[1:].split()[0]
+            current_seq = []
+        else:
+            current_seq.append(line.upper())
+    if current_seq_id:
+        sequence_ids.append(current_seq_id)
+        dna_sequences.append(''.join(current_seq))
+    return dna_sequences, sequence_ids
 
 
 def parse_metadata_files(metadata_file_names: list[str]) -> pd.DataFrame:
