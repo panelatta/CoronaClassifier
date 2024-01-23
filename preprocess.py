@@ -191,11 +191,18 @@ def merge_df(fasta_df: pd.DataFrame, metadata_df: pd.DataFrame) -> pd.DataFrame:
     :return pd.DataFrame:
     """
 
+    if os.path.exists("preprocessed_data_df.pkl"):
+        logging.info('File preprocessed_data_df.pkl already exists, skipping merging...')
+        return pd.read_pickle("preprocessed_data_df.pkl")
+
     logging.info('Merging dataframes...')
     df: pd.DataFrame = pd.merge(fasta_df, metadata_df, how='left', on='strain')
     df.dropna(inplace=True)
     df.reset_index(drop=True, inplace=True)
     df.drop(df[(df['Nextstrain_clade'] == '?') | (df['Nextstrain_clade'] == 'recombinant')].index, inplace=True)
+
+    df.to_pickle("preprocessed_data_df.pkl")
+
     return df
 
 
