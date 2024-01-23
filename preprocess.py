@@ -160,7 +160,7 @@ def parse_metadata_files(metadata_file_names: list[str]) -> pd.DataFrame:
     df: pd.DataFrame = pd.DataFrame(columns=['strain', 'Nextstrain_clade'])
 
     for metadata_file in metadata_file_names:
-        with open(metadata_file, 'r') as file:
+        with open(metadata_file, 'r', encoding="utf-8") as file:
             if os.path.exists(metadata_file + '.pkl'):
                 logging.info(f'File {metadata_file + ".pkl"} already exists, skipping parsing...')
                 df = pd.concat([df, pd.read_pickle(metadata_file + '.pkl')], ignore_index=True)
@@ -227,3 +227,7 @@ if __name__ == "__main__":
     df: pd.DataFrame = merge_df(fasta_df, metadata_df)
     print(df.head(5))
     logging.info(f"df.shape: {df.shape}")
+
+    # save processed data to pickle file
+    df.to_pickle('source_data\processed_data.pkl')
+    logging.info(f"Processed data saved to processed_data.pkl")
