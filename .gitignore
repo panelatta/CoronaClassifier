@@ -163,3 +163,7 @@ cython_debug/
 *.tsv
 *.fasta
 *.pkl
+
+# macOS
+.DS_Store
+*/.DS_Store

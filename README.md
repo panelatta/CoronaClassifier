@@ -1,7 +1,9 @@
 # CoronaClassifier
 
+After pulling down any changes, run `make clean` to clean up all temporary files.
+
 ## Preprocessing
 
 > Now the code doesn't contain the procedure of padding and building one-hot vectors. It will be added soon.
 
-`python preprocess.py source_data/metadata.tsv.xz source_data/sequences.fasta.xz `
+`make preprocess`
