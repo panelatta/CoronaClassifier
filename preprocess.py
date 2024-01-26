@@ -1,83 +1,18 @@
-import lzma
 import os.path
 import sys
 import pandas as pd
-from typing import TextIO
-from collections.abc import Iterator
 import logging
-import re
-from typing import Optional
+import torch
 from tqdm import tqdm
-
-# The block size for decompressing the files.
-# It's for limiting the memory usage, as the file will be decompressed in chunks of block_size bytes.
-BLOCK_SIZE = 256 * 1024 * 1024  # 256 MB
+import preprocess.decompress as decompress
+import preprocess.fasta as fasta
+import preprocess.metadata as metadata
+import preprocess.merged_tensor as merged_tensor
+import gc
 
 # The format and level of the logging messages.
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-
-# The maximum length of the DNA sequences.
-# Any DNA sequence shorter than this will be padded.
-MAX_SEQUENCE_LENGTH = 31000
-
-BINARY_ENCODING_MAP = {
-    'A': [1, 0, 0, 0],
-    'C': [0, 1, 0, 0],
-    'G': [0, 0, 1, 0],
-    'T': [0, 0, 0, 1],
-    'R': [1, 0, 1, 0],  # A or G
-    'Y': [0, 1, 0, 1],  # C or T
-    'S': [0, 1, 1, 0],  # G or C
-    'W': [1, 0, 0, 1],  # A or T
-    'K': [0, 0, 1, 1],  # G or T
-    'M': [1, 1, 0, 0],  # A or C
-    'B': [0, 1, 1, 1],  # C or G or T
-    'D': [1, 0, 1, 1],  # A or G or T
-    'H': [1, 1, 0, 1],  # A or C or T
-    'V': [1, 1, 1, 0],  # A or C or G
-    'N': [1, 1, 1, 1],  # Any nucleotide
-}
-
-
-def decompress_xz_generator(source_file_path: str, block_size: int) -> Iterator[bytes]:
-    """
-    Decompresses a file in chunks of block_size bytes. Returns an iterator over the decompressed blocks.
-    :param source_file_path:
-    :param block_size:
-    :return Iterator[bytes]:
-    """
-
-    with lzma.open(source_file_path, 'rb') as file:
-        while True:
-            block: bytes = file.read(block_size)
-            if not block:
-                break
-            yield block
-
-
-def save_decompressed_blocks(generator: Iterator[bytes], output_file_path: str):
-    """
-    Appends the decompressed blocks to a file.
-    :param generator:
-    :param output_file_path:
-    """
-
-    with open(output_file_path, 'ab') as file:
-        for block in generator:
-            file.write(block)
-
-
-def decompress_file(source_file_path: str, output_file_path: str, block_size: int = BLOCK_SIZE):
-    """
-    Decompresses a file in chunks of block_size bytes and saves it to output_file_path.
-    :param source_file_path:
-    :param output_file_path:
-    :param block_size:
-    """
-
-    generator: Iterator[bytes] = decompress_xz_generator(source_file_path, block_size)
-    save_decompressed_blocks(generator, output_file_path)
 
 
 def decompress_files():
@@ -92,7 +27,7 @@ def decompress_files():
             continue
 
         logging.info(f'Decompressing {path}...')
-        decompress_file(path, output_file_path, block_size=BLOCK_SIZE)
+        decompress.decompress_file(path, output_file_path)
 
 
 def get_file_names() -> tuple[list[str], list[str]]:
@@ -138,9 +73,9 @@ def parse_fasta_files(fasta_file_names: list[str]) -> pd.DataFrame:
                 continue
 
             # Parse the fasta file
-            dna_sequences: list[str]
+            dna_sequences: list[list[list[int]]]
             sequence_ids: list[str]
-            dna_sequences, sequence_ids = parse_fasta_file(fasta_file, file)
+            dna_sequences, sequence_ids = fasta.parse_fasta_file(fasta_file, file)
 
             # Construct the dataframe from the parsed data and save it to a pickle file
             logging.info(f'Saving {fasta_file + ".pkl"}...')
@@ -151,41 +86,6 @@ def parse_fasta_files(fasta_file_names: list[str]) -> pd.DataFrame:
             df = pd.concat([df, cur_df], ignore_index=True)
 
     return df
-
-
-def parse_fasta_file(fasta_file: str, file: TextIO) -> tuple[list[str], list[str]]:
-    """
-    Parses a single fasta file.
-    :param fasta_file:
-    :param file:
-    :return list[str], list[str]:
-    """
-
-    sequence_ids: list[str] = []
-    dna_sequences: list[str] = []
-
-    # Start parsing the fasta file
-    logging.info(f'Parsing {fasta_file}...')
-    current_seq_id: Optional[str] = None
-    current_seq: list[str] = []
-
-    for line in tqdm(file, desc='Parsing'):
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith('>'):
-            if current_seq_id:
-                sequence_ids.append(current_seq_id)
-                dna_sequences.append(''.join(current_seq))
-            current_seq_id = line[1:].split()[0]
-            current_seq = []
-        else:
-            current_seq.append(line.upper())
-    if current_seq_id:
-        sequence_ids.append(current_seq_id)
-        dna_sequences.append(''.join(current_seq))
-
-    return dna_sequences, sequence_ids
 
 
 def parse_metadata_files(metadata_file_names: list[str]) -> pd.DataFrame:
@@ -215,10 +115,14 @@ def parse_metadata_files(metadata_file_names: list[str]) -> pd.DataFrame:
             cur_df: pd.DataFrame = pd.read_csv(file, sep='\t', usecols=['strain', 'Nextstrain_clade'])
 
             # Extract the clade from the Nextstrain_clade column
+            clade_encoder: dict[str, int] = {}
+            encode_counter: int = 0
             for row in tqdm(cur_df.itertuples(), desc='Extracting'):
-                match = re.search(r'\d+[A-Z]+', row.Nextstrain_clade)
-                if match:
-                    cur_df.at[row.Index, 'Nextstrain_clade'] = match.group()
+                clade_encoder, encode_counter = metadata.extract_clade(cur_df, row, clade_encoder, encode_counter)
+            logging.info(f'encode_counter: {encode_counter}')
+            logging.info("Showing first 5 kind of clades and their encode:")
+            for key, value in list(clade_encoder.items())[:5]:
+                logging.info(f'clade: {key}, encode: {value}')
 
             # Save the dataframe to a pickle file
             logging.info(f'Saving {metadata_file + ".pkl"}...')
@@ -230,79 +134,47 @@ def parse_metadata_files(metadata_file_names: list[str]) -> pd.DataFrame:
     return df
 
 
-def merge_df(fasta_df: pd.DataFrame, metadata_df: pd.DataFrame) -> pd.DataFrame:
+def generate_tensors(fasta_df: pd.DataFrame, metadata_df: pd.DataFrame) -> None:
     """
-    Merges the fasta dataframe and the metadata dataframe.
+    Generates the final PyTorch tensors for training in 10 chunks.
     :param fasta_df:
     :param metadata_df:
-    :return pd.DataFrame:
     """
 
-    if os.path.exists("source_data/preprocessed_data_df.pkl"):
-        logging.info('File preprocessed_data_df.pkl already exists, skipping merging...')
-        return pd.read_pickle("source_data/preprocessed_data_df.pkl")
+    counter: int = 1
+    with tqdm(total=40, desc='Generating tensors') as pbar:
+        for sequence_tensor, clade_tensor in merged_tensor.tensor_generator(metadata_df, fasta_df):
+            if counter <= 32:
+                if not os.path.exists('preprocessed_data/train_set'):
+                    os.makedirs('preprocessed_data/train_set')
 
-    logging.info('Merging dataframes...')
-    df: pd.DataFrame = pd.merge(fasta_df, metadata_df, how='left', on='strain')
-    df.dropna(inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    df.drop(
-        df[(df['Nextstrain_clade'] == '?') | (df['Nextstrain_clade'] == 'recombinant')].index,
-        inplace=True
-    )
+                logging.info(f"Saving training dataset chunk {counter}/32...")
+                torch.save(sequence_tensor, f'preprocessed_data/train_set/sequence_tensor_{counter}.pt')
+                torch.save(clade_tensor, f'preprocessed_data/train_set/clade_tensor_{counter}.pt')
 
-    # Save the merged dataframe to a pickle file
-    df.to_pickle("source_data/preprocessed_data_df.pkl")
+            else:
+                if not os.path.exists('preprocessed_data/test_set'):
+                    os.makedirs('preprocessed_data/test_set')
 
-    return df
+                logging.info(f"Saving test dataset chunk {counter - 32}/8...")
+                torch.save(sequence_tensor, f'preprocessed_data/test_set/sequence_tensor_{counter - 32}.pt')
+                torch.save(clade_tensor, f'preprocessed_data/test_set/clade_tensor_{counter - 32}.pt')
 
-
-def encode_dna_sequence(sequence: str) -> list[list[int]]:
-    """
-    Encodes a DNA sequence to a list of binary vectors.
-    :param sequence:
-    :return list[list[int]]:
-    """
-
-    # Remove any '-' in the sequence as it means gap.
-    sequence = sequence.replace('-', '')
-
-    # Map all nucleotides to its corresponding binary encoding.
-    # For any unknown character, map it to 'N'.
-    encoded_sequence: list[list[int]] = [BINARY_ENCODING_MAP.get(nuc, [1, 1, 1, 1]) for nuc in sequence]
-
-    # Padding
-    if len(encoded_sequence) < MAX_SEQUENCE_LENGTH:
-        encoded_sequence += [[1, 1, 1, 1]] * (MAX_SEQUENCE_LENGTH - len(encoded_sequence))
-
-    # Truncate the sequence if it's too long.
-    return encoded_sequence[:MAX_SEQUENCE_LENGTH]
-
-
-def encoding_dna_sequences(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Encodes the DNA sequences in the dataframe.
-    :param df:
-    :return pd.DataFrame:
-    """
-
-    # Load the dataframe from the pickle file if it exists
-    if os.path.exists("source_data/encoded_data_df.pkl"):
-        logging.info('File encoded_data_df.pkl already exists, skipping encoding...')
-        return pd.read_pickle("source_data/encoded_data_df.pkl")
-
-    logging.info('Encoding DNA sequences...')
-
-    with tqdm(total=df.shape[0], desc='Encoding') as pbar:
-        for row in df.itertuples():
-            df.at[row.Index, 'sequence'] = encode_dna_sequence(row.sequence)
+            counter += 1
             pbar.update(1)
 
-    # Save the encoded dataframe to a pickle file
-    logging.info("Saving source_data/encoded_data_df.pkl")
-    df.to_pickle("source_data/encoded_data_df.pkl")
 
-    return df
+def clean_up() -> None:
+    """
+    Cleans up the temp files created during preprocessing.
+    """
+
+    if os.path.exists("source_data/*.tsv"):
+        os.remove("source_data/*.tsv")
+    if os.path.exists("source_data/*.fasta"):
+        os.remove("source_data/*.fasta")
+    if os.path.exists("source_data/*.pkl"):
+        os.remove("source_data/*.pkl")
 
 
 if __name__ == "__main__":
@@ -326,16 +198,12 @@ if __name__ == "__main__":
     metadata_df: pd.DataFrame = parse_metadata_files(metadata_file_names)
     logging.info(f"metadata_df.shape: {metadata_df.shape}")
 
-    # merge dataframes
-    df: pd.DataFrame = merge_df(fasta_df, metadata_df)
-    logging.info("The first 5 rows of merged dataframe:")
-    print(df.head(5))
-    logging.info(f"df.shape: {df.shape}")
+    # Generate PyTorch Tensors
+    generate_tensors(fasta_df, metadata_df)
 
-    # encode DNA sequences
-    df = encoding_dna_sequences(df)
-    logging.info("The first 5 rows of encoded dataframe:")
-    print(df.head(5))
-    logging.info(f"df.shape: {df.shape}")
+    # Clean up any temporary file created during preprocessing
+    clean_up()
+
+    logging.info("Preprocessing finished successfully!")
 
     exit(0)
