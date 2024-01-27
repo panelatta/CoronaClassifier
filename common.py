@@ -21,7 +21,9 @@ def get_logger(name: str, path: str) -> logging.Logger:
     log_name: str = f'{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}.log'
     if not os.path.exists(f'log/{path}'):
         os.makedirs(f'log/{path}')
-    file_handler: logging.FileHandler = logging.FileHandler(f'{path}/{log_name}')
+    if not os.path.exists(f'log/{path}/{log_name}'):
+        open(f'log/{path}/{log_name}', 'w').close()
+    file_handler: logging.FileHandler = logging.FileHandler(f'log/{path}/{log_name}')
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 

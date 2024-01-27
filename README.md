@@ -14,3 +14,7 @@ an filename extension of `.pt`.
 > Take Note!
 > Sometimes this step cannot exit automatically, even though all the data sets have been generated successfully.
 > Be sure to press `Ctrl + C` to exit manually.
+
+## Training
+
+`make train`

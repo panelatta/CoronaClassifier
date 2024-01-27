@@ -10,11 +10,15 @@ from data_loader import data_chunk_generator
 from common import get_logger
 
 
+# Be sure to change it if you use any other source data
+MODULE_SIZE: int = 31000
+
+
 def train() -> None:
     # Use Cross Entropy Loss function, with softmax function so no need to add softmax layer in the model
     loss_function: nn.modules.loss.CrossEntropyLoss = nn.CrossEntropyLoss()
 
-    model: nn.Module = DNASequenceClassifier()
+    model: nn.Module = DNASequenceClassifier(31000)
     optimizer: optim.Adam = optim.Adam(model.parameters(), lr=1e-3)
 
     logger: logging.Logger = get_logger('trainer', 'train')

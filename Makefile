@@ -11,3 +11,6 @@ clean_tensor:
 
 preprocess:
 	python preprocess.py source_data/metadata.tsv.xz source_data/sequences.fasta.xz
+
+train:
+	python train.py
