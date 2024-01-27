@@ -27,9 +27,14 @@ BINARY_ENCODING_MAP = {
 }
 
 
-def parse_fasta_file(fasta_file: str, file: TextIO) -> tuple[list[list[list[int]]], list[str]]:
+def parse_fasta_file(
+    logger: logging.Logger,
+    fasta_file: str,
+    file: TextIO
+) -> tuple[list[list[list[int]]], list[str]]:
     """
     Parses a single fasta file.
+    :param logger:
     :param fasta_file:
     :param file:
     :return list[list[list[int]]], list[str]:
@@ -39,7 +44,7 @@ def parse_fasta_file(fasta_file: str, file: TextIO) -> tuple[list[list[list[int]
     dna_sequences: list[list[list[int]]] = []
 
     # Start parsing the fasta file
-    logging.info(f'Parsing {fasta_file}...')
+    logger.info(f'Parsing {fasta_file}...')
     current_sequence_id: Optional[str] = None
     current_dna_sequence: list[str] = []
 
