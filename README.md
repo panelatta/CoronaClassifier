@@ -4,6 +4,12 @@ After pulling down any changes, run `make clean` to clean up all temporary files
 
 ## Install Dependencies
 
+Please make sure you are running the following version of Python:
+
+- Python version: 3.11.7
+
+Please install the dependencies by running the following command:
+
 `make install_requirements`
 
 ## Preprocessing
