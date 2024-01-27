@@ -2,6 +2,10 @@
 
 After pulling down any changes, run `make clean` to clean up all temporary files.
 
+## Install Dependencies
+
+`make install_requirements`
+
 ## Preprocessing
 
 Preprocess the source data to generate the training and testing data sets.

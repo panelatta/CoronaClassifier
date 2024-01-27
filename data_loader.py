@@ -1,8 +1,33 @@
-import logging
-
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 import torch
 from preprocess.constants import TRAIN_DATASET_SIZE, TEST_DATASET_SIZE, BATCH_SIZE
-from collections.abc import Iterator
+from torch.nn.utils.rnn import pad_sequence
+
+
+class TensorDataset(Dataset):
+    """
+    A dataset class for loading preprocessed tensors.
+    """
+    sequence_tensor_paths: list[str]
+    clade_tensor_paths: list[str]
+
+    def __init__(self, train: bool = True):
+        self.sequence_tensor_paths, self.clade_tensor_paths = get_tensor_paths(train=train)
+
+    def __len__(self) -> int:
+        return len(self.sequence_tensor_paths)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        sequence_tensor_path: str = self.sequence_tensor_paths[index]
+        clade_tensor_path: str = self.clade_tensor_paths[index]
+
+        sequence_tensor: torch.Tensor = torch.load(sequence_tensor_path)
+        clade_tensor: torch.Tensor = torch.load(clade_tensor_path)
+
+        assert len(sequence_tensor) == len(clade_tensor), "The length of the sequence and clade tensors must match."
+
+        return sequence_tensor, clade_tensor
 
 
 def get_tensor_paths(train: bool = True) -> tuple[list[str], list[str]]:
@@ -20,46 +45,56 @@ def get_tensor_paths(train: bool = True) -> tuple[list[str], list[str]]:
             [f'preprocessed_data/test_set/clade_tensor_{i}.pt' for i in range(1, TEST_DATASET_SIZE + 1)]
 
 
-def data_chunk_generator(
-    logger: logging.Logger,
-    chunk_start_index: int = 0,
-    batch_start_index: int = 0,
-    train: bool = True,
-) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+def collate_fn(batch) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Generates a batch of data by loading the preprocessed tensors.
-    :param logger:
-    :param chunk_start_index:
-    :param batch_start_index:
-    :param train:
-    :return Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    A function that collates a batch of data.
+    :param batch:
+    :return tuple[torch.Tensor, torch.Tensor]:
     """
-    if train:
-        logger.info("Loading training data...")
-    else:
-        logger.info("Loading test data...")
 
-    sequence_tensor_paths: list[str]
-    clade_tensor_paths: list[str]
-    sequence_tensor_paths, clade_tensor_paths = get_tensor_paths(train=train)
+    sequences, clades = zip(*batch)
 
-    for i in range(chunk_start_index, len(sequence_tensor_paths)):
-        sequence_tensor_path: str = sequence_tensor_paths[i]
-        clade_tensor_path: str = clade_tensor_paths[i]
+    # Use -1 as the padding value, since 0 is a valid value in the sequence tensor
+    sequences_padded = pad_sequence(sequences, batch_first=True, padding_value=-1)
+    clades = torch.stack(clades, dim=0)
+    return sequences_padded, clades
 
-        sequence_chunk: torch.Tensor = torch.load(sequence_tensor_path)
-        clade_chunk: torch.Tensor = torch.load(clade_tensor_path)
 
-        assert len(sequence_chunk) == len(clade_chunk), "The length of the sequence and clade tensors must match."
+def get_train_data() -> tuple[DataLoader, DistributedSampler]:
+    """
+    Gets the data loader and sampler for training.
+    :return tuple[DataLoader, DistributedSampler]:
+    """
 
-        j: int = batch_start_index
-        while j < len(sequence_chunk):
-            logger.info(f"Loading chunk {i + 1}/{len(sequence_tensor_paths)}...")
-            logger.info(f"Loading batch {j // BATCH_SIZE + 1}/{len(sequence_chunk) // BATCH_SIZE}...")
+    train_dataset: TensorDataset = TensorDataset(train=True)
+    train_sampler: DistributedSampler = DistributedSampler(train_dataset) \
+        if torch.distributed.is_initialized() else None
+    train_loader: torch.utils.data.DataLoader = DataLoader(
+        dataset=train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=(train_sampler is None),
+        sampler=train_sampler,
+        collate_fn=collate_fn
+    )
 
-            upper_limit: int = min(j + BATCH_SIZE, len(sequence_chunk))
-            sequences: torch.Tensor = sequence_chunk[j: upper_limit]
-            clades: torch.Tensor = clade_chunk[j: upper_limit]
-            yield sequences, clades
+    return train_loader, train_sampler
 
-            j += BATCH_SIZE
+
+def get_test_data() -> tuple[DataLoader, DistributedSampler]:
+    """
+    Gets the data loader and sampler for testing.
+    :return tuple[DataLoader, DistributedSampler]:
+    """
+
+    test_dataset: TensorDataset = TensorDataset(train=False)
+    test_sampler: DistributedSampler = DistributedSampler(test_dataset) \
+        if torch.distributed.is_initialized() else None
+    test_loader: torch.utils.data.DataLoader = DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=(test_sampler is None),
+        sampler=test_sampler,
+        collate_fn=collate_fn
+    )
+
+    return test_loader, test_sampler

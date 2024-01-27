@@ -1,4 +1,4 @@
-.PHONY: clean preprocess
+.PHONY: clean clean_tensor preprocess train output_requirements install_requirements
 
 clean:
 	rm source_data/*.tsv
@@ -13,4 +13,10 @@ preprocess:
 	python preprocess.py source_data/metadata.tsv.xz source_data/sequences.fasta.xz
 
 train:
-	python train.py
+	python -m torch.distributed.launch --nproc_per_node=8 train.py
+
+output_requirements:
+	pip freeze > requirements.txt
+
+install_requirements:
+	pip install -r requirements.txt
