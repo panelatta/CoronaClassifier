@@ -22,35 +22,36 @@ def train() -> None:
     The main function of the training stage.
     """
 
+    logger: logging.Logger = get_logger('trainer', 'train')
+
     rank: int
-    if torch.cuda.is_available():
-        # Get the rank of current process
-        rank = int(os.environ['RANK'])
-
     world_size: int
-    if torch.cuda.is_available():
-        # Get the size of the current process group (i.e. the number of GPUs)
-        world_size: int = int(os.environ['WORLD_SIZE'])
-
     if torch.cuda.is_available():
         # Initialize the process group
         # 'nccl' is the backend for GPU training, optimized for NVIDIA GPUs
         # 'env://' means that the address of the master is stored in the environment variable
         # It will also set torch.distributed.is_initialized() to True
-        dist.init_process_group(backend='nccl', init_method='env://', rank=rank, world_size=world_size)
+        dist.init_process_group(backend='nccl', init_method='env://')
+
+        # Get the rank of current process
+        rank = torch.distributed.get_rank()
+
+        # Get the size of the current process group (i.e. the number of GPUs)
+        world_size = torch.distributed.get_world_size()
+
+        logger.info(f'Process {rank} is running on GPU {rank} of {world_size} GPUs.')
 
         # Set the current process to different GPU
         torch.cuda.set_device(rank)
-
-    logger: logging.Logger = get_logger('trainer', 'train')
 
     model: nn.Module = DNASequenceClassifier(MODULE_SIZE)
 
     device: torch.device
     if torch.cuda.is_available():
-        logger.info('CUDA is available! Process {rank} will use GPU {rank}.')
+        logger.info(f'CUDA is available! Process {rank} will use GPU {rank}.')
         device = torch.device(f'cuda:{rank}')
-        model = nn.parallel.DistributedDataParallel(model).to(device)
+        model = model.to(device)
+        model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
     else:
         logger.info('CUDA is not available, using CPU...')
         device = torch.device('cpu')
@@ -139,7 +140,7 @@ def train_per_epoch(
             optimizer.zero_grad()
             output = model(sequences)
             output = output.masked_fill(~mask, -1e9)
-            loss = loss_function(output, clades)
+            loss = loss_function(output, clades, ignore_index=-1)
             loss.backward()
             optimizer.step()
 
@@ -195,7 +196,7 @@ def evaluate_model(
 
                 outputs = model(sequences)
                 outputs = outputs.masked_fill(~mask, -1e9)
-                loss = loss_function(outputs, clades)
+                loss = loss_function(outputs, clades, ignore_index=-1)
 
                 val_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)

@@ -54,10 +54,15 @@ def collate_fn(batch) -> tuple[torch.Tensor, torch.Tensor]:
 
     sequences, clades = zip(*batch)
 
-    # Use -1 as the padding value, since 0 is a valid value in the sequence tensor
-    sequences_padded = pad_sequence(sequences, batch_first=True, padding_value=-1)
-    clades = torch.stack(clades, dim=0)
-    return sequences_padded, clades
+    # Use -1 as the padding value, since 0 is a valid value in the sequence and clades tensor
+    sequences = pad_sequence(sequences, batch_first=True, padding_value=-1)
+    clades = pad_sequence(clades, batch_first=True, padding_value=-1)
+
+    # Reshape the sequences and clades tensors to [batch_size，sequence_length, 4] and [batch_size，sequence_length]
+    sequences = sequences.reshape(-1, sequences.size(2), sequences.size(3))
+    clades = clades.reshape(-1)
+
+    return sequences, clades
 
 
 def get_train_data() -> tuple[DataLoader, DistributedSampler]:

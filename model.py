@@ -26,7 +26,8 @@ class Transformer(nn.Module):
         self.encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,
             nhead=nheads,
-            dim_feedforward=dim_feedforward
+            dim_feedforward=dim_feedforward,
+            batch_first=True
         )
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
 
@@ -68,9 +69,9 @@ class DNASequenceClassifier(nn.Module):
         # [batch_size, combined_channels, sequence_length]
         combined: torch.Tensor = torch.cat((cnn1_out, cnn2_out, cnn3_out), dim=1)
 
-        # Reshape the tensor to [sequence_length, batch_size, combined_channels] to
+        # Reshape the tensor to [batch_size, sequence_length, combined_channels] to
         # fit the input requirement of Transformer
-        combined = combined.permute(2, 0, 1)
+        combined = combined.permute(0, 2, 1)
 
         transformer_out: torch.Tensor = self.transformer(combined)
         transformer_out = transformer_out[-1, :, :]     # Only use the last time step output of the transformer

@@ -13,7 +13,7 @@ preprocess:
 	python preprocess.py source_data/metadata.tsv.xz source_data/sequences.fasta.xz
 
 train:
-	python -m torch.distributed.launch --nproc_per_node=8 train.py
+	torchrun --nproc_per_node=8 --nnodes=1 --node_rank=0 --master_addr="127.0.0.1" --master_port="11451" train.py
 
 output_requirements:
 	pip freeze > requirements.txt
