@@ -47,13 +47,26 @@ def train() -> None:
     model: nn.Module = DNASequenceClassifier(MODULE_SIZE)
 
     device: torch.device
-    if torch.cuda.is_available():
+    if torch.backends.mps.is_available():
+        logger.info(f'MPS is available! Using MPS...')
+        device = torch.device("mps")
+        torch.mps.set_per_process_memory_fraction(0.1)
+    elif torch.cuda.is_available():
         logger.info(f'CUDA is available! Process {rank} will use GPU {rank}.')
         device = torch.device(f'cuda:{rank}')
+        torch.cuda.set_per_process_memory_fraction(0.1, device=device)
         model = model.to(device)
         model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
     else:
-        logger.info('CUDA is not available, using CPU...')
+        if is_macos():
+            if not torch.backends.mps.is_built():
+                print("MPS not available because the current PyTorch install was not "
+                      "built with MPS enabled.")
+            else:
+                print("MPS not available because the current MacOS version is not 12.3+ "
+                      "and/or you do not have an MPS-enabled device on this machine.")
+
+        logger.info('MPS or CUDA is not available, using CPU...')
         device = torch.device('cpu')
 
     train_loader: DataLoader
@@ -96,6 +109,14 @@ def train() -> None:
 
         logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {100. * val_acc:.2f}%')
 
+
+def is_macos() -> bool:
+    """
+    Checks if the current OS is macOS.
+    :return bool:
+    """
+
+    return os.uname().sysname == 'Darwin'
 
 def train_per_epoch(
     logger: logging.Logger,
