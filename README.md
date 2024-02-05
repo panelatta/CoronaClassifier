@@ -27,4 +27,12 @@ an filename extension of `.pt`.
 
 ## Training
 
+### CUDA Supported
+
 `make train`
+
+> Be sure to change the parameters in Makefile before running on your environment.
+
+### macOS, or just have no CUDA
+
+`python train.py`
