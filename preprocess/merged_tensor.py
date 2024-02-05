@@ -44,7 +44,8 @@ def tensor_generator(
         clade_chunk: list[int] = merged_chunk['Nextstrain_clade'].to_list()
 
         logger.info(f"Printing first {min(5, chunk_size)} rows of ({i + 1}/{num_chunks}) chunk:")
-        for j in range(min(5, chunk_size)):
+
+        for j in range(min(5, len(clade_chunk))):
             logger.info(f"clade: {clade_chunk[j]}, "
                         f"sequence: {sequence_chunk[j][:5]}{'...' if len(sequence_chunk) > 5 else ''}")
 
