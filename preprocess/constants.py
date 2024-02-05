@@ -3,7 +3,4 @@ TRAIN_DATASET_SIZE: int = 320
 TEST_DATASET_SIZE: int = 80
 
 # The size of batches that a chunk will be divided into during loading data.
-BATCH_SIZE: int = 32
-
-# The number of train epochs.
-EPOCH_NUM: int = 10
+BATCH_SIZE: int = 64
