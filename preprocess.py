@@ -1,3 +1,4 @@
+import glob
 import os.path
 import sys
 import pandas as pd
@@ -178,12 +179,9 @@ def clean_up() -> None:
     Cleans up the temp files created during preprocessing.
     """
 
-    if os.path.exists("source_data/*.tsv"):
-        os.remove("source_data/*.tsv")
-    if os.path.exists("source_data/*.fasta"):
-        os.remove("source_data/*.fasta")
-    if os.path.exists("source_data/*.pkl"):
-        os.remove("source_data/*.pkl")
+    for ext in ['tsv', 'fasta', 'pkl']:
+        for file in glob.glob(f'source_data/*.{ext}'):
+            os.remove(file)
 
 
 def preprocess() -> None:
