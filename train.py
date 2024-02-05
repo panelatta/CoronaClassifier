@@ -218,7 +218,7 @@ def train_per_epoch(
             clades = clades.to(device)
 
             optimizer.zero_grad()
-            output = model(sequences)
+            output = model(sequences, logger)
             loss = loss_function(output, clades, ignore_index=-1)
             loss.backward()
             optimizer.step()
@@ -271,7 +271,7 @@ def evaluate_model(
                 sequences = sequences.to(device)
                 clades = clades.to(device)
 
-                outputs = model(sequences)
+                outputs = model(sequences, logger)
                 loss = loss_function(outputs, clades, ignore_index=-1)
 
                 val_loss += loss.item()
