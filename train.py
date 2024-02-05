@@ -87,11 +87,11 @@ def train() -> None:
     dist.destroy_process_group()
 
 
-def load_training_data(logger: logging.Logger) -> tuple[torch.Device, nn.Module, optim.Adam, int]:
+def load_training_data(logger: logging.Logger) -> tuple[torch.device, nn.Module, optim.Adam, int]:
     """
     Loads a new model and optimizer.
     :param logger:
-    :return tuple[torch.Device, nn.Module, optim.Adam, int]:
+    :return tuple[torch.device, nn.Module, optim.Adam, int]:
     """
 
     rank = get_rank(logger)
@@ -115,12 +115,12 @@ def load_training_data(logger: logging.Logger) -> tuple[torch.Device, nn.Module,
     return device, model, optimizer, epoch
 
 
-def get_device(logger: logging.Logger, rank: Optional[int]) -> torch.Device:
+def get_device(logger: logging.Logger, rank: Optional[int]) -> torch.device:
     """
     Gets the device for training.
     :param logger:
     :param rank:
-    :return torch.Device:
+    :return torch.device:
     """
 
     if torch.backends.mps.is_available():
